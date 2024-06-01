@@ -1,0 +1,54 @@
+language: english # english, mandarin or all
+dataset:
+  data_root: /data/huxingjian/Emotion Speech Dataset/
+  mode: 
+    - train
+    - val
+    - test
+  english:
+    wav:
+      train: English/train
+      val: English/val
+      test: English/test
+    ecapa: # embedding of ECAPA! size(192)
+      train: English/train_numpy
+      val: English/val_numpy
+      test: English/test_numpy
+    wav2vec2: # embedding of wav2vec2! size(?, 1024)
+      train: English/train_wav2vec2
+      val: English/val_wav2vec2
+      test: English/test_wav2vec2
+HuBERT:
+  english:
+    train: code/HuBERT/train_esd.txt
+    val: code/HuBERT/val_esd.txt
+    test: code/HuBERT/test_esd.txt
+EASE:
+  pretrained: /home/huxingjian/model/huggingface/speechbrain/spkrec-ecapa-voxceleb
+  embedding: code/EASE/EASE_embeddings
+  checkpoint: code/EASE/EASE.pth
+  emotion_classes: 5
+  speaker_classes: 10
+  hidden_channel: 128
+SACE:
+  pretrained: /home/huxingjian/model/huggingface/facebook/wav2vec2-large-robust-ft-swbd-300h
+  input_channel: 1024
+  hidden_channel: 128 # must same as hubert
+  checkpoint: code/SACE/SACE.pth
+  embedding: code/SACE/SACE_embeddings # used in F0
+  emotion: code/SACE/SACE_emotions # used in GAN
+  emotion_classes: 5
+  speaker_classes: 10
+F0:
+  checkpoint_savedir: code/F0_predictor/cp_f0_predictor
+  checkpoint: null
+  hidden_channel: 128
+  ground_truth_f0: code/f0.pickle
+  contour: code/F0_predictor/f0_contours
+GAN:
+  checkpoint_savedir: code/HiFi-GAN/cp_hifigan
+  checkpoint: null
+  config: code/HiFi-GAN/hubert_alladv.json
+DSDT:
+  pred_F0: DSDT/pred_f0
+  reconstrct: DSDT/reconstruct
