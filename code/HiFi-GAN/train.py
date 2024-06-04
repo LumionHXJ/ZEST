@@ -60,6 +60,7 @@ def train(rank, local_rank, a, h):
         cp_do = scan_checkpoint(a.checkpoint_path, 'do_')
 
     steps = 0
+    generator.load_state_dict(torch.load('code/HiFi-GAN/cp_hifigan_1/g_00005000'), strict=False)
     if cp_g is None or cp_do is None:
         state_dict_do = None
         last_epoch = -1
@@ -185,11 +186,11 @@ def train(rank, local_rank, a, h):
 
                 y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
                 y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
-                loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-                loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-                loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-                loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-                loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+                #loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+                #loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+                loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g) 
+                loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g) 
+                loss_gen_all = loss_gen_s * 2 + loss_gen_f * 2 + loss_mel # loss_fm_s + loss_fm_f + 
                 if h.get('f0_vq_params', None):
                     loss_gen_all += f0_commit_loss * h.get('lambda_commit', None)
                 if h.get('code_vq_params', None):
@@ -210,6 +211,9 @@ def train(rank, local_rank, a, h):
                                                                                                                   loss_gen_all,
                                                                                                                   mel_error,
                                                                                                                   time.time() - start_b))
+                    print(
+                        f"loss_gen_s: {loss_gen_s}, loss_gen_f: {loss_gen_f}" #, loss_fm_s: {loss_fm_s}, loss_fm_f: {loss_fm_f}
+                    )
 
                 # checkpointing
                 if steps % a.checkpoint_interval == 0 and steps != 0:
@@ -304,7 +308,7 @@ def main():
     parser.add_argument('--group_name', default=None)
     parser.add_argument('--checkpoint_path', default=config['GAN']['checkpoint_savedir'])
     parser.add_argument('--pitch_folder', default=config['F0']['contour'])
-    parser.add_argument('--emo_folder', default=config['SACE']['emotion'])
+    parser.add_argument('--emo_folder', default=config['SACE']['embedding'])
     parser.add_argument('--config', default=config['GAN']['config'])
     parser.add_argument('--training_epochs', default=200, type=int)
     parser.add_argument('--training_steps', default=1e5, type=int)
