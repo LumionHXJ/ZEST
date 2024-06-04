@@ -199,7 +199,7 @@ def inference(item_index):
         if h.get('multispkr', None) and a.convert:
             print("In conversion")
             language = config['language']
-            reference_files = os.listdir(config['dataset'][language]['wav'])
+            reference_files = os.listdir(os.path.join(config['dataset']['data_root'], config['dataset'][language]['wav']['test']))
             # Change line 194 for setting same/different source/reference speaker  (SS/DS)
             reference_files = [x for x in reference_files if x[:4] != fname_out_name[:4]] 
             reference_files = [x for x in reference_files if int(x[5:11]) >= 350] # picking: not neutral
@@ -237,8 +237,8 @@ def main():
     parser.add_argument('--input_code_file', default=config['HuBERT'][language]['test'])
     parser.add_argument('--output_dir', default=config['DSDT']['reconstruct'])
     parser.add_argument('--emo_folder', default=config['SACE']['emotion'])
-    parser.add_argument('--pitch_folder', default=config['F0']['contours'])
-    parser.add_argument('--checkpoint_file', required=True)
+    parser.add_argument('--pitch_folder', default=config['F0']['contour'])
+    parser.add_argument('--checkpoint_file', default=config['GAN']['checkpoint'])
     parser.add_argument('--f0-stats', type=Path)
     parser.add_argument('--vc', action='store_true')
     parser.add_argument('--convert', action='store_true')

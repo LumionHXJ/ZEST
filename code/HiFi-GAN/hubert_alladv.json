@@ -20,7 +20,7 @@
     "embedding_dim": 128,
     "model_in_dim": 512,
 
-    "segment_size": 8960,
+    "segment_size": 18960,
     "code_hop_size": 320,
     "f0": true,
     "multispkr": "_",

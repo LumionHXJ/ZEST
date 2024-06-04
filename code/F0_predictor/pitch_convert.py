@@ -61,7 +61,7 @@ def getemolabel(file_name):
 def get_f0():
     os.makedirs(config['DSDT']['pred_F0'], exist_ok=True)
     test_loader = create_dataset("test", 1)
-    model = PitchModel(hparams).to(device)
+    model = PitchModel().to(device)
     model.load_state_dict(torch.load(config['F0']['checkpoint'], map_location=device))
     model.eval()
     sources = ["0011_000021.wav", "0012_000022.wav", "0013_000025.wav",
@@ -91,9 +91,9 @@ def get_f0():
                 emotion = torch.tensor(data['emotion']).to(device)
                 names = data["names"] 
                 speaker = source[:5]
-                if speaker not in names[0] and getemolabel(names) > 0 and (int(names[0][5:11]) - int(source[5:11]))%350 != 0:
+                if speaker not in names[0] and getemolabel(names[0]) > 0 and (int(names[0][5:11]) - int(source[5:11]))%350 != 0:
                     pitch_pred, _, = model(tokens_s, speaker_s, emotion, mask_s) # 替换了audio
-                    pitch_pred = torch.exp(pitch_pred) - 1
+                    # pitch_pred = torch.exp(pitch_pred) - 1
                     final_name = source_name + names[0]
                     final_name = final_name.replace(".wav", ".npy")
                     np.save(os.path.join(config['DSDT']['pred_F0'], final_name), pitch_pred[0, :].cpu().detach().numpy()) 

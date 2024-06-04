@@ -54,7 +54,7 @@ def get_f0():
             for ind in range(len(names)):
                 target_file_name = names[ind].split(os.sep)[-1].replace("wav", "npy")
                 pitch_pred, _ = model(tokens, speaker, emotion, mask)
-                pitch_pred = torch.exp(pitch_pred) - 1
+                # pitch_pred = torch.exp(pitch_pred) - 1
                 np.save(os.path.join(config['F0']['contour'], target_file_name), 
                         pitch_pred[ind, :].cpu().detach().numpy()) 
     loader = create_dataset("train", 1)
@@ -70,7 +70,7 @@ def get_f0():
             for ind in range(len(names)):
                 target_file_name = names[ind].split(os.sep)[-1].replace("wav", "npy")
                 pitch_pred, _ = model(tokens, speaker, emotion, mask)
-                pitch_pred = torch.exp(pitch_pred) - 1
+                # pitch_pred = torch.exp(pitch_pred) - 1
                 np.save(os.path.join(config['F0']['contour'], target_file_name), 
                         pitch_pred[ind, :].cpu().detach().numpy())  
     loader = create_dataset("val", 1)
@@ -86,7 +86,7 @@ def get_f0():
             for ind in range(len(names)):
                 target_file_name = names[ind].split(os.sep)[-1].replace("wav", "npy")
                 pitch_pred, _ = model(tokens, speaker, emotion, mask)
-                pitch_pred = torch.exp(pitch_pred) - 1
+                # pitch_pred = torch.exp(pitch_pred) - 1
                 np.save(os.path.join(config['F0']['contour'], target_file_name), 
                         pitch_pred[ind, :].cpu().detach().numpy()) 
 

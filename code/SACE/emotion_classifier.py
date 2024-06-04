@@ -104,11 +104,13 @@ class SACE(nn.Module):
         feat_dim = config['SACE']['hidden_channel']
         self.out_emo = nn.Sequential(
             nn.Linear(feat_dim, feat_dim//4),
+            nn.LazyBatchNorm1d(feat_dim//4),
             nn.ReLU(),
             nn.Linear(feat_dim//4, emo_claases)
         )
         self.out_spkr = nn.Sequential(
             nn.Linear(feat_dim, feat_dim//4),
+            nn.LazyBatchNorm1d(feat_dim//4),
             nn.ReLU(),
             nn.Linear(feat_dim//4, speaker_class) # output_speaker
         )
@@ -189,7 +191,7 @@ def train():
     base_lr = 1e-2
     parameters = list(model.parameters()) 
     optimizer = SGD([{'params':parameters, 
-                       'lr':base_lr}])
+                       'lr':base_lr}], weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
     final_val_loss = 1e20
 
@@ -206,14 +208,13 @@ def train():
         gt_tr_sp = []
         pred_val_sp = []
         gt_val_sp = []
-        for i, data in enumerate(tqdm(train_loader)):
-            model.train()
+        for i, data in enumerate(train_loader):
             # p = float(- i + (11 - e) * len(train_loader)) / 100 / len(train_loader)
             # alpha = 2. / (1. + np.exp(-10 * p)) - 1
             wav2vec_feat, spkr_labels, emo_labels = data[0].to(device), data[1].to(device), data[2].to(device)
             out_emo, output_spkr, _, _ = model(wav2vec_feat, alpha=1.0)
-            loss_adv = nn.CrossEntropyLoss(reduction='mean')(output_spkr, spkr_labels)
-            loss_emo = nn.CrossEntropyLoss(reduction='mean')(out_emo, emo_labels)
+            loss_adv = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.05)(output_spkr, spkr_labels)
+            loss_emo = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.05)(out_emo, emo_labels)
             loss = loss_emo + loss_adv
             tot_loss += loss_emo.detach().item()
             optimizer.zero_grad()
@@ -241,7 +242,7 @@ def train():
         scheduler.step()
         model.eval()
         with torch.no_grad():
-            for i, data in enumerate(tqdm(val_loader)):
+            for i, data in enumerate(val_loader):
                 wav2vec_feat, spkr_labels, emo_labels = data[0].to(device), data[1].to(device), data[2].to(device)
                 out_emo, output_spkr, _, _ = model(wav2vec_feat)
                 loss = nn.CrossEntropyLoss(reduction='mean')(out_emo, emo_labels)
@@ -266,6 +267,7 @@ def train():
 
         if val_loss < final_val_loss:
             torch.save(model, config['SACE']['checkpoint'])
+            logger.info(f"Saving checkpoint at epoch {e}!")
             final_val_loss = val_loss
         train_loss = tot_loss/len(train_loader)
         train_f1 = accuracy_score(gt_tr, pred_tr)
@@ -289,7 +291,7 @@ def get_embedding():
     os.makedirs(config['SACE']['embedding'], exist_ok=True)
     os.makedirs(config['SACE']['emotion'], exist_ok=True)
     with torch.no_grad():
-        for i, data in enumerate(tqdm(train_loader)):
+        for i, data in enumerate(train_loader):
             wav2vec_feat, emo_labels = data[0].to(device), data[2].to(device)
             names = data[3]
             _, _, embedded, emotion = model(wav2vec_feat) # 1, ?, 128
@@ -301,7 +303,7 @@ def get_embedding():
                         emotion[ind, :].cpu().detach().numpy())
 
 
-        for i, data in enumerate(tqdm(val_loader)):
+        for i, data in enumerate(val_loader):
             wav2vec_feat, emo_labels = data[0].to(device), data[2].to(device)
             names = data[3]
             _, _, embedded, emotion = model(wav2vec_feat) # 1, ?, 128
@@ -312,7 +314,7 @@ def get_embedding():
                 np.save(os.path.join(config['SACE']['emotion'], target_file_name), 
                         emotion[ind, :].cpu().detach().numpy())
                 
-        for i, data in enumerate(tqdm(test_loader)):
+        for i, data in enumerate(test_loader):
             wav2vec_feat, emo_labels = data[0].to(device), data[2].to(device)
             names = data[3]
             _, _, embedded, emotion = model(wav2vec_feat) # 1, ?, 128
@@ -324,5 +326,5 @@ def get_embedding():
                         emotion[ind, :].cpu().detach().numpy())
                 
 if __name__ == "__main__":
-    #train()
+    train()
     get_embedding()

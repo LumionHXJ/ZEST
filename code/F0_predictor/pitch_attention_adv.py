@@ -5,7 +5,7 @@ import numpy as np
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 import torch.nn as nn
 import random
 from sklearn.metrics import f1_score
@@ -46,7 +46,8 @@ torch.set_printoptions(profile="full")
 log_freq = 10
 val_freq = 5
 accumulation_grad = 4
-SEED = 1234
+use_amp = True
+SEED = 42
 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 set_seed(1234)
@@ -67,7 +68,6 @@ else:
     logger = None
     writer = None
 
-lambda_l1 = 0.1
 ckpt = config['F0']['checkpoint']
 
 def l2_loss(input, target):
@@ -88,13 +88,11 @@ def train():
         if local_rank == 0:
             logger.info(f"Using {torch.cuda.device_count()} GPUs")
         model = DDP(model, 
-                    device_ids=[local_rank], 
-                    find_unused_parameters=True)
-    model.to(device)
+                    device_ids=[local_rank])
 
-    base_lr = 1e-4
-    parameters = list(model.parameters()) 
-    optimizer = Adam([{'params':parameters, 'lr':base_lr}])
+    base_lr = 0.01
+    optimizer = Adam(params=model.parameters(), lr=base_lr, weight_decay=0.1)
+    
     final_val_loss = 1e20
     scheduler = ReduceLROnPlateau(optimizer, 
                                   mode='min', 
@@ -103,35 +101,44 @@ def train():
                                   threshold=0.01,
                                   verbose=True)
     scaler = GradScaler()
-    f0_l1 = nn.L1Loss(reduction='mean')
-    emo_ce = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.05)
-    spkr_ce = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.05)
+    f0_l1 = nn.SmoothL1Loss(reduction='mean')
 
-    for e in range(50):
+    for e in range(80):
         model.train()
         val_loss, val_acc = 0.0, 0.0
         train_sampler.set_epoch(e)
         epoch_start_time = time.time()
 
         for i, data in enumerate(train_loader):
-            model.train()
             mask ,tokens, f0_trg = torch.tensor(data["mask"]).to(device),\
-                torch.tensor(data["hubert"]).to(device),\
-                torch.tensor(data["f0"]).to(device)
+                                torch.tensor(data["hubert"]).to(device),\
+                                torch.tensor(data["f0"]).to(device)
             speaker = torch.tensor(data["speaker"]).to(device)
             emotion = torch.tensor(data['emotion']).to(device)
+            # f0_trg = f0_trg / torch.max(f0_trg, dim=1, keepdim=True)[0]
 
-            with autocast():
+            if use_amp:
+                with autocast():
+                    pitch_pred, mask_loss = model(tokens, speaker, emotion, mask)
+                    #pitch_pred = torch.exp(pitch_pred) - 1
+                    loss = (mask_loss * f0_l1(pitch_pred, f0_trg.float().detach())).mean() # pitch loss   
+                    loss = loss / accumulation_grad
+                scaler.scale(loss).backward()
+            else:
                 pitch_pred, mask_loss = model(tokens, speaker, emotion, mask)
-                pitch_pred = torch.exp(pitch_pred) - 1
-                loss = (mask_loss * f0_l1(pitch_pred, f0_trg.float().detach())).mean() * lambda_l1 # pitch loss
-                
+                # pitch_pred = torch.exp(pitch_pred) - 1
+                loss = (mask_loss * f0_l1(pitch_pred, f0_trg.float().detach())).mean()
                 loss = loss / accumulation_grad
-            scaler.scale(loss).backward()
+                loss.backward()
             
             if (i + 1) % accumulation_grad == 0:
-                scaler.step(optimizer)
-                scaler.update()
+                if use_amp: 
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad()
+                else:
+                    optimizer.step()
+                    optimizer.zero_grad()
 
             if (i + 1) % log_freq == 0 and local_rank == 0:
                 iteration = e * len(train_loader) + i + 1
@@ -147,8 +154,14 @@ def train():
                 logger.info(f"Epoch {e+1}, Iter {i + 1}/{len(train_loader)}, F0 reconstruction Loss {loss * 4}")
         
         if (i + 1) % accumulation_grad != 0: # lasting grad
-            scaler.step(optimizer)
-            scaler.update()
+            if use_amp: 
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+            else:
+                optimizer.step()
+                optimizer.zero_grad()
+            
         if (i + 1) % log_freq != 0 and local_rank == 0:
             logger.info(f"Epoch {e+1}, Iter {i + 1} / {len(train_loader)}, F0 reconstruction Loss {loss * 4}")
             iteration = e * len(train_loader) + i + 1
@@ -174,13 +187,13 @@ def train():
                     torch.tensor(data["f0"]).to(device)
                 speaker = torch.tensor(data["speaker"]).to(device)
                 emotion = torch.tensor(data['emotion']).to(device)
-
+                # f0_trg = f0_trg / torch.max(f0_trg, dim=1, keepdim=True)[0]
 
                 pitch_pred, mask_loss = model(tokens, speaker, emotion, mask)
-                pitch_pred = torch.exp(pitch_pred) - 1
-                loss = (mask_loss * f0_l1(pitch_pred, f0_trg.float().detach())).mean() * lambda_l1
-                
+                # pitch_pred = torch.exp(pitch_pred) - 1
+                loss = (mask_loss * f0_l1(pitch_pred, f0_trg.float().detach())).mean()                
                 val_loss += loss.detach().item()
+
         if val_loss < final_val_loss and local_rank == 0:
             torch.save(model.state_dict(), os.path.join(config['F0']['checkpoint_savedir'], 
                                                         f'f0_predictor_epoch_{e+1}.pth'))

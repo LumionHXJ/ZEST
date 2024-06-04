@@ -125,17 +125,34 @@ class Generator(torch.nn.Module):
 class CodeGenerator(Generator):
     def __init__(self, h):
         super().__init__(h)
-        self.dict = nn.Embedding(h.num_embeddings, h.embedding_dim) 
+        self.dict = nn.Embedding(h.num_embeddings + 1, h.embedding_dim) 
         self.f0 = h.get('f0', None)
         self.multispkr = h.get('multispkr', None)
         self.encodeunits = h.get('encodeunits', None)
         self.encodef0 = h.get('encodef0', None)
+        self.speaker_linear = nn.Linear(h.embedding_dim, h.embedding_dim)
+        self.emotion_linear = nn.Linear(h.embedding_dim, h.embedding_dim)
         if self.encodeunits:
-            self.unitencoder = UnitEncoder(h.embedding_dim)
+            # self.unitencoder = UnitEncoder(h.embedding_dim)
+            self.unitencoder = nn.TransformerEncoder(
+                nn.TransformerEncoderLayer(
+                    h.embedding_dim, nhead=8, dim_feedforward=4*h.embedding_dim,
+                    batch_first=True, norm_first=True,
+                    activation=F.gelu
+                ),
+                num_layers=6
+            )
         if self.encodef0:
-            self.f0encoder = F0Encoder(128)
-        if self.multispkr:
-            self.spkr = nn.Embedding(200, h.embedding_dim)
+            self.f0encoder = F0Encoder(h.embedding_dim)
+        #if self.multispkr:
+        #    self.spkr = nn.Embedding(200, h.embedding_dim)
+        self.enhance = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=h.embedding_dim * 4, nhead=16,dim_feedforward=h.embedding_dim * 16,
+                batch_first=True, norm_first=True
+            ),
+            num_layers=6
+        )
 
         self.encoder = None
         self.vq = None
@@ -193,9 +210,8 @@ class CodeGenerator(Generator):
             x = code_h_q[0]
         else:
             x = self.dict(kwargs['code']).transpose(1, 2)
-        
         if self.encodeunits:
-            x = self.unitencoder(x)
+            x = self.unitencoder(x.transpose(1,2).contiguous()).transpose(1,2).contiguous()
         f0_commit_losses = None
         f0_metrics = None
         if self.vq:
@@ -219,19 +235,20 @@ class CodeGenerator(Generator):
             else:
                 kwargs['f0'] = self._upsample(kwargs['f0'], x.shape[-1])
             x = torch.cat([x, kwargs['f0']], dim=1)
-
         if self.multispkr:
-            # spkr = self.spkr(kwargs['spkr']).transpose(1, 2)
-            # print(spkr.shape)
-            spkr = self._upsample(kwargs['spkr'], x.shape[-1])
+            spkr = self.speaker_linear(kwargs['spkr'])
+            spkr = self._upsample(spkr, x.shape[-1])
             x = torch.cat([x, spkr], dim=1)
-
         for k, feat in kwargs.items():
             if k in ['spkr', 'code', 'f0']:
                 continue
-
-            feat = self._upsample(feat, x.shape[-1])
+            if k == 'emo_embed':
+                feat = self.emotion_linear(feat).transpose(1,2).contiguous()
+            else:
+                feat = self._upsample(feat, x.shape[-1])
             x = torch.cat([x, feat], dim=1)
+        print(x.size())
+        x = self.enhance(x.transpose(1,2).contiguous()).transpose(1,2).contiguous()
         if self.vq or self.code_vq:
             return super().forward(x), (code_commit_losses, f0_commit_losses), (code_metrics, f0_metrics)
         else:

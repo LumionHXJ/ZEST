@@ -307,7 +307,8 @@ class CodeDataset(torch.utils.data.Dataset):
             if self.f0_feats:
                 feats['f0_stats'] = torch.FloatTensor([mean, std]).view(-1).numpy()
         
-        feats["emo_embed"] = emo_embed
+        feats["emo_embed"] = torch._adaptive_avg_pool2d(torch.tensor(emo_embed)[None], 
+                                                        output_size=(59, 128)).squeeze(0).numpy() # (128, 128)
 
         return feats, audio.squeeze(0), str(filename), mel_loss.squeeze()
 

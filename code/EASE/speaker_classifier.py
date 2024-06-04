@@ -98,22 +98,41 @@ class SpeakerModel(nn.Module):
         hidden_channel = config['EASE']['hidden_channel']
 
         self.fc1 = nn.Linear(192, hidden_channel)
+        self.ln1 = nn.LayerNorm(hidden_channel)
+        
         self.fc = nn.Linear(hidden_channel, hidden_channel)
+        self.ln2 = nn.LayerNorm(hidden_channel)
+        
         self.fc_embed = nn.Linear(hidden_channel, hidden_channel)
-
+        self.ln3 = nn.LayerNorm(hidden_channel)
+        
         self.fc2 = nn.Linear(hidden_channel, hidden_channel)
+        self.ln4 = nn.LayerNorm(hidden_channel)
+        
         self.fc_embed_1 = nn.Linear(hidden_channel, hidden_channel)
+        self.ln5 = nn.LayerNorm(hidden_channel)
+        
         self.fc3 = nn.Linear(hidden_channel, spkr_class)
-
+        
         self.fc4 = nn.Linear(hidden_channel, hidden_channel)
+        self.ln6 = nn.LayerNorm(hidden_channel)
+        
         self.fc_embed_2 = nn.Linear(hidden_channel, hidden_channel)
+        self.ln7 = nn.LayerNorm(hidden_channel)
+        
         self.fc5 = nn.Linear(hidden_channel, emo_class)
     
     def forward(self, feat, alpha=1.0):
-        feat = self.fc(self.fc_embed(self.fc1(feat)))
+        feat = self.ln1(self.fc1(feat))
+        feat = self.ln2(self.fc(self.ln3(self.fc_embed(feat))))
+        
         reverse = ReverseLayerF.apply(feat, alpha)
-        out = self.fc3(self.fc_embed_1(self.fc2(feat)))
-        emo_out = self.fc5(self.fc_embed_2(self.fc4(reverse)))
+        
+        out = self.ln5(self.fc_embed_1(self.ln4(self.fc2(feat))))
+        out = self.fc3(out)
+        
+        emo_out = self.ln7(self.fc_embed_2(self.ln6(self.fc4(reverse))))
+        emo_out = self.fc5(emo_out)
         
         return out, emo_out, feat
 
@@ -137,7 +156,7 @@ def train():
     model.to(device)
     base_lr = 1e-4
     parameters = list(model.parameters()) 
-    optimizer = Adam([{'params':parameters, 'lr':base_lr}])
+    optimizer = Adam([{'params':parameters, 'lr':base_lr}], weight_decay=0.1)
     final_val_loss = 1e20
 
     for e in range(10):
@@ -149,15 +168,19 @@ def train():
         gt_tr = []
         pred_val = []
         gt_val = []
-        for i, data in enumerate(tqdm(train_loader)):
+        pred_tr_emo = []
+        gt_tr_emo = []
+        pred_val_emo = []
+        gt_val_emo = []
+        for i, data in enumerate(train_loader):
             model.train()
-            p = float(i + e * len(train_loader)) / 100 / len(train_loader)
-            alpha = 2. / (1. + np.exp(-10 * p)) - 1
+            #p = float(i + e * len(train_loader)) / 100 / len(train_loader)
+            #alpha = 2. / (1. + np.exp(-10 * p)) - 1
             speaker_feat, labels, emo_labels = data[0].to(device), data[1].to(device), data[2].to(device)
-            outputs, out_emo, _ = model(speaker_feat, alpha)
-            loss = nn.CrossEntropyLoss(reduction='mean')(outputs, labels)
-            loss_emo = nn.CrossEntropyLoss(reduction='mean')(out_emo, emo_labels)
-            loss += 10*loss_emo
+            outputs, out_emo, _ = model(speaker_feat, alpha=1.0)
+            loss = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.1)(outputs, labels)
+            loss_emo = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.1)(out_emo, emo_labels)
+            loss += loss_emo
             tot_loss += loss.detach().item()
             optimizer.zero_grad()
             loss.backward()
@@ -169,10 +192,18 @@ def train():
             labels = labels.detach().cpu().numpy()
             labels = list(labels)
             gt_tr.extend(labels)
+
+            pred = torch.argmax(out_emo, dim = 1)
+            pred = pred.detach().cpu().numpy()
+            pred = list(pred)
+            pred_tr_emo.extend(pred)
+            labels = emo_labels.detach().cpu().numpy()
+            labels = list(labels)
+            gt_tr_emo.extend(labels)
         
         model.eval()
         with torch.no_grad():
-            for i, data in enumerate(tqdm(val_loader)):
+            for i, data in enumerate(val_loader):
                 speaker_feat, labels, emo_labels = data[0].to(device), data[1].to(device), data[2].to(device)
                 outputs, out_emo, _ = model(speaker_feat)
                 loss = nn.CrossEntropyLoss(reduction='mean')(outputs, labels)
@@ -184,20 +215,32 @@ def train():
                 labels = labels.detach().cpu().numpy()
                 labels = list(labels)
                 gt_val.extend(labels)
+
+                pred = torch.argmax(out_emo, dim = 1)
+                pred = pred.detach().cpu().numpy()
+                pred = list(pred)
+                pred_val_emo.extend(pred)
+                labels = emo_labels.detach().cpu().numpy()
+                labels = list(labels)
+                gt_val_emo.extend(labels)
         if val_loss < final_val_loss:
             torch.save(model, config['EASE']['checkpoint'])
             final_val_loss = val_loss
         train_loss = tot_loss/len(train_loader)
         train_f1 = accuracy_score(gt_tr, pred_tr)
+        train_f1_emo = accuracy_score(gt_tr_emo, pred_tr_emo)
         val_loss_log = val_loss/len(val_loader)
         val_f1 = accuracy_score(gt_val, pred_val)
+        val_f1_emo = accuracy_score(gt_val_emo, pred_val_emo)
         e_log = e + 1
         logger.info(f"Epoch {e_log}, \
                     Training Loss {train_loss},\
-                    Training Accuracy {train_f1}")
+                    Training Accuracy {train_f1}\
+                    Emotion Accuracy {train_f1_emo}")
         logger.info(f"Epoch {e_log}, \
                     Validation Loss {val_loss_log},\
-                    Validation Accuracy {val_f1}")
+                    Validation Accuracy {val_f1}\
+                    Emotion Accuracy {val_f1_emo}")
 
 def get_embedding():
     train_loader = create_dataset("train", 1)
@@ -208,7 +251,7 @@ def get_embedding():
     model.eval()
     os.makedirs(config['EASE']['embedding'], exist_ok=True)
     with torch.no_grad():
-        for i, data in enumerate(tqdm(train_loader)):
+        for i, data in enumerate(train_loader):
             speaker_feat, labels = data[0].to(device), data[1].to(device)
             names = data[3]
             _, _, embedded = model(speaker_feat)
@@ -216,7 +259,7 @@ def get_embedding():
                 target_file_name = names[ind].replace("wav", "npy")
                 np.save(os.path.join(config['EASE']['embedding'], target_file_name), embedded[ind, :].cpu().detach().numpy())
 
-        for i, data in enumerate(tqdm(val_loader)):
+        for i, data in enumerate(val_loader):
             speaker_feat, labels = data[0].to(device), data[1].to(device)
             names = data[3]
             _, _, embedded = model(speaker_feat)
@@ -224,7 +267,7 @@ def get_embedding():
                 target_file_name = names[ind].replace("wav", "npy")
                 np.save(os.path.join(config['EASE']['embedding'], target_file_name), embedded[ind, :].cpu().detach().numpy())  
         
-        for i, data in enumerate(tqdm(test_loader)):
+        for i, data in enumerate(test_loader):
             speaker_feat, labels = data[0].to(device), data[1].to(device)
             names = data[3]
             _, _, embedded = model(speaker_feat)
