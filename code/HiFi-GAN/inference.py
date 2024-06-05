@@ -209,7 +209,7 @@ def inference(item_index):
             reference_files = [x for x in reference_files if (int(x[5:11])-source_num)%350!=0]
             
             for i, filename in enumerate(reference_files):
-                emo_embed = np.load(os.path.join(config['SACE']['emotion'],
+                emo_embed = np.load(os.path.join(config['SACE']['embedding'],
                                                  filename.replace(".wav", ".npy")))
                 f0 = np.load(os.path.join(config['DSDT']['pred_F0'], 
                                           fname_out_name + filename.replace(".wav", ".npy")))
@@ -236,7 +236,7 @@ def main():
     parser.add_argument('--code_file', default=None)
     parser.add_argument('--input_code_file', default=config['HuBERT'][language]['test'])
     parser.add_argument('--output_dir', default=config['DSDT']['reconstruct'])
-    parser.add_argument('--emo_folder', default=config['SACE']['emotion'])
+    parser.add_argument('--emo_folder', default=config['SACE']['embedding'])
     parser.add_argument('--pitch_folder', default=config['F0']['contour'])
     parser.add_argument('--checkpoint_file', default=config['GAN']['checkpoint'])
     parser.add_argument('--f0-stats', type=Path)

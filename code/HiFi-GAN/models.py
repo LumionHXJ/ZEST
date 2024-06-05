@@ -243,11 +243,12 @@ class CodeGenerator(Generator):
             if k in ['spkr', 'code', 'f0']:
                 continue
             if k == 'emo_embed':
+                feat = torch._adaptive_avg_pool2d(torch.tensor(feat)[None], 
+                                                    output_size=(x.shape[-1], 128)).squeeze(0)
                 feat = self.emotion_linear(feat).transpose(1,2).contiguous()
             else:
                 feat = self._upsample(feat, x.shape[-1])
             x = torch.cat([x, feat], dim=1)
-        print(x.size())
         x = self.enhance(x.transpose(1,2).contiguous()).transpose(1,2).contiguous()
         if self.vq or self.code_vq:
             return super().forward(x), (code_commit_losses, f0_commit_losses), (code_metrics, f0_metrics)
