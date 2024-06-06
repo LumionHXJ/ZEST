@@ -36,6 +36,7 @@ with open('code/config.yml', 'r') as file:
 
 h = None
 device = None
+mode = 'emospk'
 
 def stream(message):
     sys.stdout.write(f"\r{message}")
@@ -163,6 +164,7 @@ def inference(item_index):
                "0014_000032.wav", "0015_000034.wav", "0016_000035.wav",
                "0017_000038.wav", "0018_000043.wav", "0019_000023.wav",
                "0020_000047.wav"] # copy from pitch_convert.py
+    # DSDT_sources = ["0011_000021.wav"] # copy from pitch_convert.py
 
     for ind in range(11, 21): # NOTE: ENGLISH
         speaker_id["00"+str(ind)] = ind-11
@@ -209,10 +211,21 @@ def inference(item_index):
             reference_files = [x for x in reference_files if (int(x[5:11])-source_num)%350!=0]
             
             for i, filename in enumerate(reference_files):
-                emo_embed = np.load(os.path.join(config['SACE']['embedding'],
-                                                 filename.replace(".wav", ".npy")))
-                f0 = np.load(os.path.join(config['DSDT']['pred_F0'], 
-                                          fname_out_name + filename.replace(".wav", ".npy")))
+                if mode == 'spk':
+                    emo_embed = np.load(os.path.join(config['SACE']['embedding'], fname_out_name + ".npy"))
+                    code['spkr'] = np.load(os.path.join(config['EASE']['embedding'], filename.replace(".wav", ".npy")))
+                    code['spkr'] = torch.tensor(code['spkr']).to(device).unsqueeze(0)
+                elif mode == 'emospk':
+                    emo_embed = np.load(os.path.join(config['SACE']['embedding'], filename.replace(".wav", ".npy")))
+                    code['spkr'] = np.load(os.path.join(config['EASE']['embedding'], filename.replace(".wav", ".npy")))
+                    code['spkr'] = torch.tensor(code['spkr']).to(device).unsqueeze(0)
+                else:
+                    emo_embed = np.load(os.path.join(config['SACE']['embedding'], filename.replace(".wav", ".npy")))
+                f0 = np.load(os.path.join(config['DSDT']['pred_F0']+f"_{mode}", fname_out_name + filename.replace(".wav", ".npy")))
+                # emo_embed = np.load(os.path.join(config['SACE']['embedding'],
+                #                                  filename.replace(".wav", ".npy")))
+                # f0 = np.load(os.path.join(config['DSDT']['pred_F0'], 
+                #                           fname_out_name + filename.replace(".wav", ".npy")))
                 f0 = f0.astype(np.float32)
                 trg_f0 = f0
                 new_f0 = torch.tensor(f0)
