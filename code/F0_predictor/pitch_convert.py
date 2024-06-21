@@ -21,6 +21,8 @@ from dataset import create_dataset
 from model import PitchModel
 import yaml
 
+mode = 'emospk'
+
 with open('code/config.yml', 'r') as file:
     config = yaml.safe_load(file)
 
@@ -59,7 +61,7 @@ def getemolabel(file_name):
 
 
 def get_f0():
-    os.makedirs(config['DSDT']['pred_F0'], exist_ok=True)
+    os.makedirs(config['DSDT']['pred_F0']+f"_{mode}", exist_ok=True)
     test_loader = create_dataset("test", 1)
     model = PitchModel().to(device)
     model.load_state_dict(torch.load(config['F0']['checkpoint'], map_location=device))
@@ -81,7 +83,7 @@ def get_f0():
                 names = data["names"] 
                 if names[0] == source:
                     source_name = names[0].replace(".wav", "")
-                    tokens_s, mask_s, speaker_s = tokens, mask, speaker
+                    tokens_s, mask_s, speaker_s, emotion_s = tokens, mask, speaker, emotion
 
             for i, data in enumerate(test_loader):
                 mask ,tokens, f0_trg = torch.tensor(data["mask"]).to(device),\
@@ -89,14 +91,20 @@ def get_f0():
                     torch.tensor(data["f0"]).to(device)
                 speaker = torch.tensor(data["speaker"]).to(device)
                 emotion = torch.tensor(data['emotion']).to(device)
+                speaker_t, emotion_t = speaker, emotion
                 names = data["names"] 
                 speaker = source[:5]
                 if speaker not in names[0] and getemolabel(names[0]) > 0 and (int(names[0][5:11]) - int(source[5:11]))%350 != 0:
-                    pitch_pred, _, = model(tokens_s, speaker_s, emotion, mask_s) # 替换了audio
+                    if mode == "emo":
+                        pitch_pred, _, = model(tokens_s, speaker_s, emotion_t, mask_s) # 替换了audio
+                    elif mode == "spk":
+                        pitch_pred, _, = model(tokens_s, speaker_t, emotion_s, mask_s) # 替换了audio
+                    elif mode == "emospk":
+                        pitch_pred, _, = model(tokens_s, speaker_t, emotion_t, mask_s) # 替换了audio
                     # pitch_pred = torch.exp(pitch_pred) - 1
                     final_name = source_name + names[0]
                     final_name = final_name.replace(".wav", ".npy")
-                    np.save(os.path.join(config['DSDT']['pred_F0'], final_name), pitch_pred[0, :].cpu().detach().numpy()) 
+                    np.save(os.path.join(config['DSDT']['pred_F0']+f"_{mode}", final_name), pitch_pred[0, :].cpu().detach().numpy()) 
 
 if __name__ == "__main__":
     get_f0()

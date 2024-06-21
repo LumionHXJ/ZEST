@@ -1,7 +1,7 @@
 # ZEST
-Zero-Shot Emotion Style Transfer
+Zero-Shot Emotion Style Transfer (**Zero Shot Audio to Audio Emotion Transfer With Speaker Disentanglement** accepted at **ICASSP 2024**)
 
-Samples and code for the paper **Zero Shot Audio to Audio Emotion Transfer With Speaker Disentanglement** accepted at **ICASSP 2024**
+Codes are adapted from [ZEST](https://github.com/iiscleap/ZEST/tree/main)
 
 ## Ablations
 
@@ -36,3 +36,49 @@ We show three examples of how the F0 conversion works in ZEST. We show three exa
 DSDT|  USS| UTE 
 :-------------------------:|:-------------------------:|:--------------------------:|
 <img src="./images/F0_conversions_DSDT.png" width="600px"></img>|  <img src="./images/F0_conversions_USS.png" width="600px"></img>|  <img src="./images/F0_conversions_UTE.png" width="600px"></img>
+
+## Training Pipeline
+
+**PLEASE NOTE THAT: ALL CODE SHOULD BE RUN AT BASE FOLDER**
+
+please checking out **code/config.yml**.
+
+1. EASE
+
+	1. run **get_seapker_embedding.py**, get embeddings of ECAPA.
+	2. run  **speaker_classifier.py**, train EASE. We provided EASE.pth.
+
+2. SACE
+
+	1. run **get_emotion_embedding.py**, get embeddings of wav2vec2. We freeze all layers in wav2vec2
+	2. run  **emotion_classifier.py**, train SACE. We provided SACE.pth.
+
+3. F0
+
+	1. run **pitch_attention_adv.py** in ddp way, training F0_predictor.
+
+		```bash
+		python -m torch.distributed.launch --nproc_per_node=4 code/F0_predictor/pitch_attention_adv.py
+		```
+
+	2.  reconstruct F0 by **pitch_inference.py**.
+
+4. HiFi-GAN
+
+	1. run **train.py** in ddp way.
+
+		```bash
+		python -m torch.distributed.launch --nproc_per_node=4 code/HiFi-GAN/train.py 
+		```
+
+## Reconstruct Pipeline
+
+1. run **pitch_convert.py** to get DSDT F0 contours.
+
+2. run **inference.py** in HiFi-GAN.
+
+	```
+	python code/HiFi-GAN/inference.py --convert
+	```
+
+	
