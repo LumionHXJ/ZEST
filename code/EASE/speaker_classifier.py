@@ -174,8 +174,6 @@ def train():
         gt_val_emo = []
         for i, data in enumerate(train_loader):
             model.train()
-            #p = float(i + e * len(train_loader)) / 100 / len(train_loader)
-            #alpha = 2. / (1. + np.exp(-10 * p)) - 1
             speaker_feat, labels, emo_labels = data[0].to(device), data[1].to(device), data[2].to(device)
             outputs, out_emo, _ = model(speaker_feat, alpha=1.0)
             loss = nn.CrossEntropyLoss(reduction='mean', label_smoothing=0.1)(outputs, labels)
